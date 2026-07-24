@@ -72,51 +72,80 @@ void initialize(float *a, float *b, float *c, const int M, const int N,
  * @brief Launch sgemm using cuBLAS
  */
 void launchCublasSgemm(float *a, float *b, float *c, const int M, const int N,
-                       const int K) {
-  cublasHandle_t handle;
-  cublasCreate(&handle);
+                        const int K) {
+  static cublasHandle_t handle = nullptr;
+  if (handle == nullptr) {
+    cublasCreate(&handle);
+  }
   float alpha = 1.0;
   float beta = 0.0;
   cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, b, N, a, K,
               &beta, c, N);
 }
 
+bool compare(float *a, float *b, const int N) {
+  for (int i = 0; i < N; ++i) {
+    if (std::abs(a[i] - b[i]) > 1e-2) {
+      printf("Mismatch at index %d: %f vs %f\n", i, a[i], b[i]);
+      return false;
+    }
+  }
+  printf("Results match\n");
+  return true;
+}
 
 int main() {
-  float *a, *b, *c;
-  a = new float[MAXN * MAXN];
-  b = new float[MAXN * MAXN];
-  c = new float[MAXN * MAXN];
+  const int size = MAXN * MAXN;
+  float *a, *b, *c, *h_ref;
+  a = new float[size];
+  b = new float[size];
+  c = new float[size];
+  h_ref = new float[size];
   initialize(a, b, c, MAXN, MAXN, MAXN);
 
-  // ********** CPU **********
   auto start = std::chrono::high_resolution_clock::now();
-  naiveSgemm(a, b, c, MAXN, MAXN, MAXN);
+  naiveSgemm(a, b, h_ref, MAXN, MAXN, MAXN);
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> elapsed = end - start;
   printf("CPU time: %.3fs\n", elapsed.count());
 
   float *d_a, *d_b, *d_c;
-  cudaMalloc(&d_a, MAXN * MAXN * sizeof(float));
-  cudaMalloc(&d_b, MAXN * MAXN * sizeof(float));
-  cudaMalloc(&d_c, MAXN * MAXN * sizeof(float));
-  cudaMemcpy(d_a, a, MAXN * MAXN * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_b, b, MAXN * MAXN * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_c, c, MAXN * MAXN * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMalloc(&d_a, size * sizeof(float));
+  cudaMalloc(&d_b, size * sizeof(float));
+  cudaMalloc(&d_c, size * sizeof(float));
+  cudaMemcpy(d_a, a, size * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_b, b, size * sizeof(float), cudaMemcpyHostToDevice);
 
-  // ********** GPU **********
   start = std::chrono::high_resolution_clock::now();
+  cudaMemcpy(d_c, c, size * sizeof(float), cudaMemcpyHostToDevice);
   launchSgemm2D(d_a, d_b, d_c, MAXN, MAXN, MAXN);
   cudaDeviceSynchronize();
   end = std::chrono::high_resolution_clock::now();
   elapsed = end - start;
   printf("GPU time: %.3fs\n", elapsed.count());
 
-  // ********** cuBLAS **********
+  cudaMemcpy(c, d_c, size * sizeof(float), cudaMemcpyDeviceToHost);
+  compare(h_ref, c, size);
+
+  launchCublasSgemm(d_a, d_b, d_c, MAXN, MAXN, MAXN);
+  cudaDeviceSynchronize();
   start = std::chrono::high_resolution_clock::now();
+  cudaMemset(d_c, 0, size * sizeof(float));
   launchCublasSgemm(d_a, d_b, d_c, MAXN, MAXN, MAXN);
   cudaDeviceSynchronize();
   end = std::chrono::high_resolution_clock::now();
   elapsed = end - start;
   printf("cuBLAS time: %.3fs\n", elapsed.count());
+
+  cudaMemcpy(c, d_c, size * sizeof(float), cudaMemcpyDeviceToHost);
+  compare(h_ref, c, size);
+
+  cudaFree(d_a);
+  cudaFree(d_b);
+  cudaFree(d_c);
+  delete[] a;
+  delete[] b;
+  delete[] c;
+  delete[] h_ref;
+  return 0;
 }

@@ -38,8 +38,10 @@ bool compare(float *a, float *b, const int N) {
 }
 
 __global__ void vectorAddGPU(float *a, float *b, float *c, const int N) {
-  // Implement your vector add kernel here
-  
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i < N) {
+    c[i] = a[i] + b[i];
+  }
 }
 
 int main() {
@@ -57,18 +59,35 @@ int main() {
   printf("CPU time: %.3fs\n", elapsed.count());
 
   // ************** START GPU MEMORY ALLOCATION **************
-  // Implement your code here
-  
+  float *d_a, *d_b, *d_c;
+  cudaMalloc(&d_a, MAXN * sizeof(float));
+  cudaMalloc(&d_b, MAXN * sizeof(float));
+  cudaMalloc(&d_c, MAXN * sizeof(float));
+  cudaMemcpy(d_a, a, MAXN * sizeof(float), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_b, b, MAXN * sizeof(float), cudaMemcpyHostToDevice);
+
   // ************** START GPU COMPUTATION **************
   start = std::chrono::high_resolution_clock::now();
-  // Implement your code here
+  int threads = 256;
+  int blocks = (MAXN + threads - 1) / threads;
+  vectorAddGPU<<<blocks, threads>>>(d_a, d_b, d_c, MAXN);
+  cudaDeviceSynchronize();
   end = std::chrono::high_resolution_clock::now();
 
   float *result = new float[MAXN];
-  // Copy the result from GPU to CPU
+  cudaMemcpy(result, d_c, MAXN * sizeof(float), cudaMemcpyDeviceToHost);
+
   if (compare(c, result, MAXN)) {
     std::chrono::duration<double> new_elapsed = end - start;
     printf("GPU time: %.3fs\n", new_elapsed.count());
     printf("Speedup: %.2fx\n", elapsed.count() / new_elapsed.count());
   }
+
+  cudaFree(d_a);
+  cudaFree(d_b);
+  cudaFree(d_c);
+  delete[] a;
+  delete[] b;
+  delete[] c;
+  delete[] result;
 }

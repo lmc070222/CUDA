@@ -1,6 +1,7 @@
-CC = nvcc
-CFLAGS = -I/usr/local/lib/python3.10/dist-packages/torch/include \
-				 -I/usr/local/lib/python3.10/dist-packages/torch/include/torch/csrc/api/include \
+CC = /usr/local/cuda/bin/nvcc
+TORCH_HOME = $(shell python3 -c 'import torch, os; print(os.path.dirname(torch.__file__))')
+CFLAGS = -I$(TORCH_HOME)/include \
+				 -I$(TORCH_HOME)/include/torch/csrc/api/include \
 				 -lcublas
 
 HELLO = build/hello
@@ -12,7 +13,7 @@ BASIC_SRC = csrc/basic.cu
 GEMM = build/gemm
 GEMM_SRC = csrc/gemm.cu
 
-all: $(HELLO) $(BASIC)
+all: $(HELLO) $(BASIC) $(GEMM)
 
 $(HELLO): $(HELLO_SRC)
 	mkdir -p build
